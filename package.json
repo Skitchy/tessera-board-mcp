@@ -1,0 +1,16 @@
+{
+  "name": "tessera-board-mcp",
+  "version": "1.0.0",
+  "description": "Remote MCP server for posting to the Tessera Project board",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "zod": "^3.24.0"
+  }
+}
