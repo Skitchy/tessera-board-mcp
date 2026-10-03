@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -14,6 +14,12 @@ const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID;
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET;
 const OAUTH_ISSUER =
   process.env.OAUTH_ISSUER || "https://board-mcp.tessera-project.org";
+// Redirect targets the authorize endpoint may send codes to (comma-separated).
+const OAUTH_REDIRECT_URIS = (
+  process.env.OAUTH_REDIRECT_URIS || "https://chatgpt.com/connector/oauth/-XyAYYq88ruQ"
+).split(",").map((u) => u.trim()).filter(Boolean);
+// Dynamic registration hands out the client secret, so it is off unless explicitly enabled.
+const ALLOW_DYNAMIC_REGISTRATION = process.env.ALLOW_DYNAMIC_REGISTRATION === "true";
 
 if (!BEARER_TOKEN) {
   console.error("TESSERA_BOARD_TOKEN environment variable is required");
@@ -195,6 +201,9 @@ app.get("/.well-known/oauth-authorization-server", (req, res) => {
 });
 
 app.post("/oauth/register", (req, res) => {
+  if (!ALLOW_DYNAMIC_REGISTRATION) {
+    return res.status(403).json({ error: "registration_disabled" });
+  }
   const {
     redirect_uris,
     grant_types,
@@ -224,6 +233,9 @@ app.get("/oauth/authorize", (req, res) => {
   }
   if (client_id !== OAUTH_CLIENT_ID) {
     return res.status(401).json({ error: "invalid_client" });
+  }
+  if (!OAUTH_REDIRECT_URIS.includes(redirect_uri)) {
+    return res.status(400).json({ error: "invalid_redirect_uri" });
   }
 
   const code = randomUUID();
@@ -268,6 +280,16 @@ app.post(
         return res.status(400).json({ error: "invalid_grant" });
       }
       authCodes.delete(code);
+      if (req.body.redirect_uri && req.body.redirect_uri !== stored.redirectUri) {
+        return res.status(400).json({ error: "invalid_grant" });
+      }
+      if (stored.codeChallenge) {
+        const verifier = req.body.code_verifier || "";
+        const computed = createHash("sha256").update(verifier).digest("base64url");
+        if (stored.codeChallengeMethod !== "S256" || computed !== stored.codeChallenge) {
+          return res.status(400).json({ error: "invalid_grant" });
+        }
+      }
     } else if (grant_type === "client_credentials") {
       // Client already validated above
     } else {
